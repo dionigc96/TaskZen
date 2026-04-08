@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Task, TaskStatus, Profile, Tag, Team, TeamMember } from '@/types';
-import { Trash, Search, Plus, Tag as TagIcon, LayoutGrid, X } from 'lucide-react';
+import { Trash, Search, Plus, Tag as TagIcon, LayoutGrid, X, Users, Calendar, Settings, ChevronDown } from 'lucide-react';
 import { TagBadge } from './TagBadge';
 import { TagSelector } from './TagSelector';
 import { fetchUserTags, assignTagsToTask } from '@/utils/supabase/tags';
@@ -35,7 +35,6 @@ import { ProfileModal } from './ProfileModal';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { CreateTeamModal } from './CreateTeamModal';
 import { TeamSettingsModal } from './TeamSettingsModal';
-import { Users, Settings } from 'lucide-react';
 
 const COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
   { id: 'pending', title: 'Pending', color: 'bg-secondary' },
@@ -187,7 +186,9 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [filterAssigneeId, setFilterAssigneeId] = useState<string | null>(null);
-  const [filterDateRange, setFilterDateRange] = useState<'all' | 'today' | 'week' | 'overdue'>('all');
+  const [dateRange, setDateRange] = useState<{ start: string | null, end: string | null }>({ start: null, end: null });
+  const [isDateRangeOpen, setIsDateRangeOpen] = useState(false);
+  const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   
   const [sessionProfile, setSessionProfile] = useState<Profile | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -375,35 +376,79 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-surface-container-high backdrop-blur-md bg-surface/80 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-dim flex items-center justify-center shadow-lg shadow-primary/20">
-            <span className="text-black font-extrabold text-lg flex items-center justify-center h-full pt-0.5">T</span>
+      <header className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between px-4 py-3 lg:px-6 lg:py-4 border-b border-surface-container-high backdrop-blur-md bg-surface/80 z-20 gap-4">
+        {/* Top Row: Logo & Search (Mobile) / Logo (Desktop) */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-dim flex items-center justify-center shadow-lg shadow-primary/20">
+              <span className="text-black font-extrabold text-lg flex items-center justify-center h-full pt-0.5">T</span>
+            </div>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-black tracking-tight text-on-surface">TaskZen</h1>
+              <div className="lg:hidden flex items-center gap-2 mt-0.5">
+                <select 
+                  value={selectedTeamId || ''} 
+                  onChange={(e) => {
+                    if (e.target.value === 'NEW_TEAM') {
+                      setIsCreateTeamOpen(true);
+                    } else {
+                      setSelectedTeamId(e.target.value);
+                    }
+                  }}
+                  className="bg-transparent text-[10px] font-bold text-on-surface-variant focus:outline-none cursor-pointer max-w-[100px] truncate"
+                >
+                  {teams.map(t => <option key={t.id} value={t.id} className="bg-surface-container text-on-surface">{t.name}</option>)}
+                  <option value="NEW_TEAM" className="bg-surface-container text-primary font-bold">+ Nuevo Team</option>
+                </select>
+                {(currentUserRole === 'admin' || currentUserRole === 'product_owner') && (
+                  <button onClick={() => setIsTeamSettingsOpen(true)} className="p-1 rounded-md text-on-surface-variant hover:text-primary transition-colors">
+                    <Settings className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-          <h1 className="text-xl font-black tracking-tight text-on-surface">TaskZen</h1>
+
+          <div className="flex lg:hidden items-center gap-3">
+             <ThemeSwitcher />
+             <div onClick={() => setIsProfileModalOpen(true)} className="w-8 h-8 rounded-full bg-surface-container-high border-2 border-outline-variant/30 cursor-pointer overflow-hidden shadow-sm">
+                <img src={userAvatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+             </div>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative pr-2 flex-1 sm:pr-4 sm:flex-none">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4" />
+
+        {/* Action Row: Search, Switchers, Buttons */}
+        <div className="flex items-center gap-2 sm:gap-4 flex-1">
+          <div className="relative flex-1 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4 group-focus-within:text-primary transition-colors" />
             <input 
                type="text" 
                placeholder="Search..." 
                value={searchQuery}
                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent border border-outline-variant/30 text-on-surface text-sm rounded-md pl-9 pr-4 py-2 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full sm:w-48 transition-all"
+               className="bg-surface-container-low border border-outline-variant/20 text-on-surface text-sm rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 w-full lg:max-w-xs transition-all placeholder:text-on-surface-variant/40 shadow-inner"
             />
           </div>
 
-          <div className="flex bg-surface-container border border-outline-variant/20 rounded-lg p-0.5">
-             <button onClick={() => setGroupBy('status')} className={`p-1.5 rounded-md transition-all ${groupBy === 'status' ? 'bg-primary text-black shadow-sm' : 'text-on-surface-variant'}`}><LayoutGrid className="w-4 h-4" /></button>
-             <button onClick={() => setGroupBy('tag')} className={`p-1.5 rounded-md transition-all ${groupBy === 'tag' ? 'bg-primary text-black shadow-sm' : 'text-on-surface-variant'}`}><TagIcon className="w-4 h-4" /></button>
+          <div className="flex bg-surface-container border border-outline-variant/20 rounded-xl p-0.5 shrink-0 shadow-inner">
+             <button title="Status View" onClick={() => setGroupBy('status')} className={`p-1.5 sm:p-2 rounded-lg transition-all ${groupBy === 'status' ? 'bg-primary text-black shadow-lg shadow-primary/20' : 'text-on-surface-variant hover:text-on-surface'}`}><LayoutGrid className="w-4 h-4" /></button>
+             <button title="Tag View" onClick={() => setGroupBy('tag')} className={`p-1.5 sm:p-2 rounded-lg transition-all ${groupBy === 'tag' ? 'bg-primary text-black shadow-lg shadow-primary/20' : 'text-on-surface-variant hover:text-on-surface'}`}><TagIcon className="w-4 h-4" /></button>
           </div>
 
-          <button onClick={() => setIsTagManagerOpen(true)} className="flex items-center gap-2 bg-secondary-container text-on-secondary-container px-4 py-2 rounded-md font-medium border border-outline-variant/20"><TagIcon className="w-4 h-4" /> <span className="hidden sm:inline">Categorías</span></button>
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-primary text-black px-4 py-2 rounded-md font-medium shadow-lg shadow-primary/20 transition-shadow"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">New Task</span></button>
+          <div className="flex items-center gap-2 pr-1 ml-auto lg:ml-0">
+            <button onClick={() => setIsTagManagerOpen(true)} className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 bg-secondary-container text-on-secondary-container rounded-xl font-medium border border-outline-variant/20 hover:brightness-110 active:scale-95 transition-all shadow-sm" title="Categorías">
+              <TagIcon className="w-4 h-4" /> 
+              <span className="hidden sm:inline ml-2 text-xs uppercase tracking-wider font-bold">Tags</span>
+            </button>
+            <button onClick={() => setIsModalOpen(true)} className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 bg-primary text-black rounded-xl font-medium shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all" title="New Task">
+              <Plus className="w-5 h-5" /> 
+              <span className="hidden sm:inline ml-2 text-xs uppercase tracking-wider font-bold">New Task</span>
+            </button>
+          </div>
           
-          <div className="flex items-center gap-4 pl-4 border-l border-outline-variant/20">
-             <div className="hidden md:flex items-center gap-3 bg-surface-container-high px-3 py-1.5 rounded-lg border border-outline-variant/10 shadow-inner">
+          {/* Desktop Only Features */}
+          <div className="hidden lg:flex items-center gap-4 pl-4 border-l border-outline-variant/20">
+             <div className="flex items-center gap-3 bg-surface-container-high px-3 py-1.5 rounded-xl border border-outline-variant/10 shadow-inner">
                <div className="flex flex-col">
                   <span className="text-[8px] font-bold text-on-surface-variant uppercase tracking-tighter">Equipo:</span>
                   <select 
@@ -415,7 +460,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
                         setSelectedTeamId(e.target.value);
                       }
                     }}
-                    className="bg-transparent text-sm font-semibold text-on-surface focus:outline-none cursor-pointer pr-4"
+                    className="bg-transparent text-xs font-bold text-on-surface focus:outline-none cursor-pointer pr-4"
                   >
                     {teams.map(t => <option key={t.id} value={t.id} className="bg-surface-container text-on-surface">{t.name}</option>)}
                     <option value="NEW_TEAM" className="bg-surface-container text-primary font-bold">+ Nuevo Equipo</option>
@@ -425,7 +470,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
                {(currentUserRole === 'admin' || currentUserRole === 'product_owner') && (
                  <button 
                   onClick={() => setIsTeamSettingsOpen(true)}
-                  className="p-1.5 rounded-md hover:bg-primary/20 hover:text-primary transition-colors border border-transparent hover:border-primary/20"
+                  className="p-1.5 rounded-lg hover:bg-primary/20 hover:text-primary transition-colors border border-transparent hover:border-primary/20"
                   title="Gestionar Miembros"
                  >
                    <Users className="w-4 h-4" />
@@ -433,16 +478,19 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
                )}
              </div>
              <ThemeSwitcher />
-             <div onClick={() => setIsProfileModalOpen(true)} className="w-9 h-9 rounded-full bg-surface-container-high border-2 border-outline-variant/30 cursor-pointer overflow-hidden"><img src={userAvatarUrl} alt="Avatar" className="w-full h-full object-cover" /></div>
+             <div onClick={() => setIsProfileModalOpen(true)} className="w-9 h-9 rounded-full bg-surface-container-high border-2 border-outline-variant/30 cursor-pointer overflow-hidden shadow-md active:scale-90 transition-transform">
+               <img src={userAvatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+             </div>
           </div>
         </div>
       </header>
 
       {/* Advanced Filters Toolbar */}
-      <div className="px-6 py-3 bg-surface-container-low border-b border-outline-variant/10 flex items-center gap-6 overflow-x-auto scrollbar-hide shrink-0 shadow-sm">
+      <div className="px-4 lg:px-6 py-3 bg-surface-container-low border-b border-outline-variant/10 flex items-center gap-4 sm:gap-6 shrink-0 shadow-sm relative z-30">
         {/* Assignee Filter */}
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase text-on-surface-variant shrink-0">Responsable:</span>
+        <div className="flex items-center gap-2 lg:gap-3">
+          <span className="text-[10px] font-bold uppercase text-on-surface-variant shrink-0 hidden sm:block">Responsable:</span>
+          <Users className="w-4 h-4 text-on-surface-variant sm:hidden" />
           <div className="flex items-center -space-x-2">
             <button 
               onClick={() => setFilterAssigneeId(null)}
@@ -463,81 +511,234 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
           </div>
         </div>
 
-        {/* Date Filter */}
-        <div className="flex items-center gap-3 pl-6 border-l border-outline-variant/20">
-          <span className="text-[10px] font-bold uppercase text-on-surface-variant shrink-0">Fecha:</span>
-          <div className="flex bg-surface-container-high p-1 rounded-lg gap-1 border border-outline-variant/10">
-            {(['all', 'today', 'week', 'overdue'] as const).map(range => (
-              <button 
-                key={range}
-                onClick={() => setFilterDateRange(range)}
-                className={`px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all ${filterDateRange === range ? 'bg-primary text-black shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
+        {/* Date Filter Range Picker */}
+        <div className="relative">
+          <button 
+            onClick={() => setIsDateRangeOpen(!isDateRangeOpen)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-wider ${dateRange.start || dateRange.end ? 'bg-primary/20 border-primary text-primary shadow-sm' : 'bg-surface-container-high border-outline-variant/10 text-on-surface-variant hover:text-on-surface'}`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span className="hidden xs:inline">
+              {(dateRange.start || dateRange.end) 
+                ? `${dateRange.start ? new Date(dateRange.start).toLocaleDateString() : '...'} - ${dateRange.end ? new Date(dateRange.end).toLocaleDateString() : '...'}` 
+                : 'Filtrar Fecha'}
+            </span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${isDateRangeOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isDateRangeOpen && (
+            <div className="absolute top-full left-0 mt-2 z-50 p-4 bg-surface-container border border-outline-variant/20 rounded-2xl shadow-2xl min-w-[280px]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-bold text-on-surface uppercase tracking-tighter">Rango de Fecha</h3>
+                {(dateRange.start || dateRange.end) && (
+                  <button 
+                    onClick={() => {
+                      setDateRange({ start: null, end: null });
+                      setIsDateRangeOpen(false);
+                    }}
+                    className="text-[10px] font-bold text-primary hover:underline"
+                  >
+                    LIMPIAR
+                  </button>
+                )}
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-black text-on-surface-variant uppercase ml-1">Desde:</label>
+                  <input 
+                    type="date" 
+                    value={dateRange.start || ''}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value || null }))}
+                    className="bg-surface-container-low border border-outline-variant/20 text-on-surface text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 w-full transition-all"
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-black text-on-surface-variant uppercase ml-1">Hasta:</label>
+                  <input 
+                    type="date" 
+                    value={dateRange.end || ''}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value || null }))}
+                    className="bg-surface-container-low border border-outline-variant/20 text-on-surface text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 w-full transition-all"
+                  />
+                </div>
+
+                <button 
+                  onClick={() => setIsDateRangeOpen(false)}
+                  className="w-full py-2 bg-primary text-black font-bold text-[10px] uppercase rounded-lg shadow-lg shadow-primary/20 mt-2"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Tag Filters (Existing) */}
+        {/* Tag Filters */}
         {allTags.length > 0 && (
-          <div className="flex items-center gap-3 pl-6 border-l border-outline-variant/20 flex-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase text-on-surface-variant shrink-0">Categoría:</span>
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
-              {allTags.map(tag => {
-                const isActive = filterTagIds.includes(tag.id);
-                return (
-                  <button key={tag.id} onClick={() => setFilterTagIds(prev => prev.includes(tag.id) ? prev.filter(id => id !== tag.id) : [...prev, tag.id])} className={`px-2.5 py-1.5 rounded-full text-[9px] font-semibold transition-all flex items-center gap-1.5 border whitespace-nowrap ${isActive ? 'scale-105 shadow-md' : 'bg-surface-container-high text-on-surface-variant'}`} style={{ backgroundColor: isActive ? tag.color : undefined, color: isActive ? '#000' : undefined }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                    {tag.name}
-                  </button>
-                );
-              })}
+          <div className="flex items-center gap-3 lg:pl-6 lg:border-l lg:border-outline-variant/20 flex-1 min-w-0 overflow-visible">
+            {/* Desktop Version: Horizontal Scroll */}
+            <div className="hidden lg:flex items-center gap-3 flex-1 min-w-0">
+              <span className="text-[10px] font-bold uppercase text-on-surface-variant shrink-0">Categoría:</span>
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1">
+                {allTags.map(tag => {
+                  const isActive = filterTagIds.includes(tag.id);
+                  return (
+                    <button key={tag.id} onClick={() => setFilterTagIds(prev => prev.includes(tag.id) ? prev.filter(id => id !== tag.id) : [...prev, tag.id])} className={`px-2.5 py-1.5 rounded-full text-[9px] font-semibold transition-all flex items-center gap-1.5 border whitespace-nowrap ${isActive ? 'scale-105 shadow-md' : 'bg-surface-container-high text-on-surface-variant'}`} style={{ backgroundColor: isActive ? tag.color : undefined, color: isActive ? '#000' : undefined }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+              {filterTagIds.length > 0 && <button onClick={() => setFilterTagIds([])} className="ml-2 text-[10px] font-bold text-primary hover:underline uppercase shrink-0">Limpiar</button>}
             </div>
-            {filterTagIds.length > 0 && <button onClick={() => setFilterTagIds([])} className="ml-2 text-[10px] font-bold text-primary hover:underline uppercase shrink-0">Limpiar</button>}
+
+            {/* Mobile Version: Dropdown */}
+            <div className="lg:hidden relative">
+              <button 
+                onClick={() => setIsTagFilterOpen(!isTagFilterOpen)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-wider ${filterTagIds.length > 0 ? 'bg-primary/20 border-primary text-primary shadow-sm' : 'bg-surface-container-high border-outline-variant/10 text-on-surface-variant hover:text-on-surface'}`}
+              >
+                <TagIcon className="w-4 h-4" />
+                <span>Categorías</span>
+                {filterTagIds.length > 0 && (
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-primary text-black text-[9px] font-black">
+                    {filterTagIds.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3 h-3 transition-transform ${isTagFilterOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isTagFilterOpen && (
+                <div className="absolute top-full left-0 mt-2 z-50 p-4 bg-surface-container border border-outline-variant/20 rounded-2xl shadow-2xl min-w-[200px] max-h-[300px] overflow-y-auto no-scrollbar">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-bold text-on-surface uppercase tracking-tighter">Filtrar por Etiqueta</h3>
+                    {filterTagIds.length > 0 && (
+                      <button onClick={() => setFilterTagIds([])} className="text-[10px] font-bold text-primary hover:underline">LIMPIAR</button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {allTags.map(tag => {
+                      const isActive = filterTagIds.includes(tag.id);
+                      return (
+                        <button 
+                          key={tag.id} 
+                          onClick={() => setFilterTagIds(prev => prev.includes(tag.id) ? prev.filter(id => id !== tag.id) : [...prev, tag.id])}
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-container-high transition-colors text-left"
+                        >
+                          <div className={`w-3 h-3 rounded-full border border-white/20 ${isActive ? 'ring-2 ring-primary ring-offset-2 ring-offset-surface-container' : ''}`} style={{ backgroundColor: tag.color }} />
+                          <span className={`text-[11px] font-semibold ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}>{tag.name}</span>
+                          {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-primary" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button 
+                    onClick={() => setIsTagFilterOpen(false)}
+                    className="w-full py-2 bg-primary text-black font-bold text-[10px] uppercase rounded-lg mt-4"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-x-auto p-6 flex gap-6 items-start">
-          {groupBy === 'status' ? (
-            COLUMNS.map(col => {
-              const filteredTasks = tasks.filter(t => {
-                const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+          {(() => {
+            // Unify filtering logic
+            const getFilteredTasks = (taskList: Task[]) => {
+              return taskList.filter(t => {
+                const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                     (t.description?.toLowerCase() || '').includes(searchQuery.toLowerCase());
                 const matchesTags = filterTagIds.length === 0 || t.tags?.some(tag => filterTagIds.includes(tag.id));
                 const matchesAssignee = filterAssigneeId === null || t.assigned_to === filterAssigneeId;
                 
                 let matchesDate = true;
-                if (filterDateRange !== 'all' && t.due_date) {
-                  const d = new Date(t.due_date);
-                  const now = new Date();
-                  if (filterDateRange === 'today') matchesDate = d.toDateString() === now.toDateString();
-                  else if (filterDateRange === 'week') {
-                    const weekEnd = new Date(); weekEnd.setDate(now.getDate() + 7);
-                    matchesDate = d >= now && d <= weekEnd;
+                if (dateRange.start || dateRange.end) {
+                  if (!t.due_date) {
+                    matchesDate = false;
+                  } else {
+                    const d = new Date(t.due_date);
+                    const taskDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                    
+                    if (dateRange.start) {
+                      const startDate = new Date(dateRange.start);
+                      const startCmp = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+                      if (taskDate < startCmp) matchesDate = false;
+                    }
+                    
+                    if (dateRange.end && matchesDate) {
+                      const endDate = new Date(dateRange.end);
+                      const endCmp = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+                      if (taskDate > endCmp) matchesDate = false;
+                    }
                   }
-                  else if (filterDateRange === 'overdue') matchesDate = d < now;
-                } else if (filterDateRange !== 'all') {
-                  matchesDate = false;
                 }
 
-                return t.status === col.id && matchesSearch && matchesTags && matchesAssignee && matchesDate;
+                return matchesSearch && matchesTags && matchesAssignee && matchesDate;
               });
-              return (<KanbanColumn key={col.id} column={col} tasks={filteredTasks} globalAvatar={userAvatarUrl} onTaskClick={setSelectedTask} onDeleteTask={handleDeleteTask} onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} />);
-            })
-          ) : (
-            <>
-              {allTags.map(tag => {
-                const filteredTasks = tasks.filter(t => t.tags?.some(tagObj => tagObj.id === tag.id) && (t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase() || '').includes(searchQuery.toLowerCase())));
-                return (<KanbanColumn key={tag.id} column={{ id: tag.id as any, title: tag.name, color: '' }} tasks={filteredTasks} globalAvatar={userAvatarUrl} onTaskClick={setSelectedTask} onDeleteTask={handleDeleteTask} onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} />);
-              })}
-              {(() => {
-                  const uncategorizedTasks = tasks.filter(t => (!t.tags || t.tags.length === 0) && (t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase() || '').includes(searchQuery.toLowerCase())));
-                  return (<KanbanColumn column={{ id: 'none' as any, title: 'No Tag', color: 'bg-outline-variant/30' }} tasks={uncategorizedTasks} globalAvatar={userAvatarUrl} onTaskClick={setSelectedTask} onDeleteTask={handleDeleteTask} onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} />);
-              })()}
-            </>
-          )}
+            };
+
+            if (groupBy === 'status') {
+              return COLUMNS.map(col => {
+                const filteredTasks = getFilteredTasks(tasks.filter(t => t.status === col.id));
+                return (
+                  <KanbanColumn 
+                    key={col.id} 
+                    column={col} 
+                    tasks={filteredTasks} 
+                    globalAvatar={userAvatarUrl} 
+                    onTaskClick={setSelectedTask} 
+                    onDeleteTask={handleDeleteTask} 
+                    onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} 
+                    setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} 
+                  />
+                );
+              });
+            } else {
+              return (
+                <>
+                  {allTags.map(tag => {
+                    const tagTasks = tasks.filter(t => t.tags?.some(tagObj => tagObj.id === tag.id));
+                    const filteredTasks = getFilteredTasks(tagTasks);
+                    return (
+                      <KanbanColumn 
+                        key={tag.id} 
+                        column={{ id: tag.id as any, title: tag.name, color: '' }} 
+                        tasks={filteredTasks} 
+                        globalAvatar={userAvatarUrl} 
+                        onTaskClick={setSelectedTask} 
+                        onDeleteTask={handleDeleteTask} 
+                        onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} 
+                        setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} 
+                      />
+                    );
+                  })}
+                  {(() => {
+                    const uncategorizedTasks = tasks.filter(t => !t.tags || t.tags.length === 0);
+                    const filteredTasks = getFilteredTasks(uncategorizedTasks);
+                    return (
+                      <KanbanColumn 
+                        column={{ id: 'none' as any, title: 'No Tag', color: 'bg-outline-variant/30' }} 
+                        tasks={filteredTasks} 
+                        globalAvatar={userAvatarUrl} 
+                        onTaskClick={setSelectedTask} 
+                        onDeleteTask={handleDeleteTask} 
+                        onTagClick={(tagId) => setFilterTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])} 
+                        setIsOpeningWithTagsFocused={setIsOpeningWithTagsFocused} 
+                      />
+                    );
+                  })()}
+                </>
+              );
+            }
+          })()}
         </div>
         <DragOverlay>
            {activeTask ? (<div className="rotate-2 scale-105 opacity-90"><TaskCardRenderer task={activeTask} globalAvatar={userAvatarUrl} /></div>) : null}
@@ -564,7 +765,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
                  }} />
               </div>
               <div className="p-4 flex justify-end"><button onClick={() => setIsTagManagerOpen(false)} className="px-6 py-2 bg-primary text-black font-bold uppercase text-[10px] rounded-lg">Listo</button></div>
-           </div>
+            </div>
         </div>
       )}
 
@@ -596,6 +797,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
         team={teams.find(t => t.id === selectedTeamId) || null}
         onClose={() => setIsTeamSettingsOpen(false)}
         currentUserRole={currentUserRole}
+        onMembersUpdate={setTeamMembers}
       />
     </div>
   );

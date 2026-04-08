@@ -9,12 +9,14 @@ export function TeamSettingsModal({
   isOpen, 
   team, 
   onClose,
-  currentUserRole
+  currentUserRole,
+  onMembersUpdate
 }: { 
   isOpen: boolean, 
   team: Team | null, 
   onClose: () => void,
-  currentUserRole: TeamRole
+  currentUserRole: TeamRole,
+  onMembersUpdate?: (members: TeamMember[]) => void
 }) {
   const [members, setMembers] = useState<TeamMember[]>([])
   const [inviteEmail, setInviteEmail] = useState('')
@@ -36,6 +38,7 @@ export function TeamSettingsModal({
     setIsLoading(true)
     const data = await fetchTeamMembers(team.id)
     setMembers(data)
+    onMembersUpdate?.(data)
     setIsLoading(false)
   }
 
