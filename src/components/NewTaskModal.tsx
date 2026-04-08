@@ -8,12 +8,14 @@ export function NewTaskModal({
    isOpen, 
    onClose, 
    onSubmit,
-   teamMembers = []
+   teamMembers = [],
+   teamId = null
 }: { 
    isOpen: boolean, 
    onClose: () => void, 
    onSubmit: (data: any) => Promise<void>,
-   teamMembers?: TeamMember[]
+   teamMembers?: TeamMember[],
+   teamId?: string | null
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -110,7 +112,7 @@ export function NewTaskModal({
 
            <div>
               <label className="block text-[10px] uppercase tracking-wider text-on-surface-variant mb-2 font-bold">Etiquetas / Categorías</label>
-              <TagSelector selectedTagIds={selectedTagIds} onChange={setSelectedTagIds} />
+              <TagSelector selectedTagIds={selectedTagIds} onChange={setSelectedTagIds} teamId={teamId} />
            </div>
 
            <div className="border border-outline-variant/20 rounded-xl p-4 bg-surface-container mt-2">

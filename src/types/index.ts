@@ -4,6 +4,7 @@ export type TeamRole = 'admin' | 'product_owner' | 'member';
 export interface Tag {
   id: string;
   user_id: string;
+  team_id: string | null;
   name: string;
   color: string;
   parent_id: string | null;
@@ -49,4 +50,16 @@ export interface Task {
   assigned_to?: string | null;
   tags?: Tag[];
   assignee?: Profile | null;
+  comment_count?: number;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  parent_id: string | null;
+  created_at: string;
+  profile?: Profile;
+  replies?: TaskComment[];
 }

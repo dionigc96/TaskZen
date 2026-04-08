@@ -29,13 +29,18 @@ export async function signup(formData: FormData) {
 
   const email = formData.get('email') as string
   const password = formData.get('password') as string
+  const full_name = formData.get('full_name') as string
+
+  if (!full_name || full_name.trim().length === 0) {
+    redirect('/login?message=El nombre completo es obligatorio para registrarse.&type=error')
+  }
 
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
        data: {
-          full_name: email.split('@')[0], 
+          full_name, 
        }
     }
   })

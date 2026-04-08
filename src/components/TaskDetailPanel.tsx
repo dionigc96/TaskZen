@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Task, Tag, TeamMember, TeamRole } from '@/types'
+import { Task, Tag, TeamMember, TeamRole, TaskComment } from '@/types'
 import { TagSelector } from './TagSelector'
 import { TagBadge } from './TagBadge'
-import { Plus, User, ShieldAlert } from 'lucide-react'
+import { Plus, User, ShieldAlert, MessageSquare, Send, Reply, Trash2, Calendar } from 'lucide-react'
+import { fetchTaskComments, createComment, deleteComment } from '@/utils/supabase/comments'
 
 export function TaskDetailPanel({ 
    isOpen, 
@@ -15,7 +16,8 @@ export function TaskDetailPanel({
    onDelete,
    teamMembers = [],
    currentUserRole = 'member',
-   currentUserId = ''
+   currentUserId = '',
+   teamId = null
 }: { 
    isOpen: boolean, 
    task: Task | null, 
@@ -25,65 +27,109 @@ export function TaskDetailPanel({
    onDelete: (id: string) => Promise<void>,
    teamMembers?: TeamMember[],
    currentUserRole?: TeamRole,
-   currentUserId?: string
+   currentUserId?: string,
+   teamId?: string | null
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedTitle, setEditedTitle] = useState('');
-  const [editedDesc, setEditedDesc] = useState('');
-  const [editedTagIds, setEditedTagIds] = useState<string[]>([]);
-  const [editedAssignedTo, setEditedAssignedTo] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+   const [isEditing, setIsEditing] = useState(false);
+   const [editedTitle, setEditedTitle] = useState('');
+   const [editedDesc, setEditedDesc] = useState('');
+   const [editedTagIds, setEditedTagIds] = useState<string[]>([]);
+   const [editedAssignedTo, setEditedAssignedTo] = useState<string>('');
+   const [isSubmitting, setIsSubmitting] = useState(false);
+   
+   // Estados para comentarios
+   const [comments, setComments] = useState<TaskComment[]>([]);
+   const [newComment, setNewComment] = useState('');
+   const [replyingTo, setReplyingTo] = useState<TaskComment | null>(null);
+   const [isLoadingComments, setIsLoadingComments] = useState(false);
 
-  // RBAC: Roles higher than member OR creator can edit/delete
-  const canManage = currentUserRole === 'admin' || currentUserRole === 'product_owner' || task?.user_id === currentUserId;
+   // RBAC: Roles higher than member OR creator can edit/delete
+   const canManage = currentUserRole === 'admin' || currentUserRole === 'product_owner' || task?.user_id === currentUserId;
 
-  useEffect(() => {
-     if (task) {
-        setEditedTitle(task.title);
-        setEditedDesc(task.description || '');
-        setEditedTagIds(task.tags?.map(t => t.id) || []);
-        setEditedAssignedTo(task.assigned_to || '');
-        
-        // Si venimos de un "Quick Add", activamos edición de inmediato
-        if (autoEditTags) {
-           setIsEditing(true);
-        } else {
-           setIsEditing(false);
-        }
-     }
-  }, [task, autoEditTags]);
+   useEffect(() => {
+      if (task) {
+         setEditedTitle(task.title);
+         setEditedDesc(task.description || '');
+         setEditedTagIds(task.tags?.map(t => t.id) || []);
+         setEditedAssignedTo(task.assigned_to || '');
+         
+         // Si venimos de un "Quick Add", activamos edición de inmediato
+         if (autoEditTags) {
+            setIsEditing(true);
+         } else {
+            setIsEditing(false);
+         }
 
-  if (!task) return null;
+         loadComments();
+      }
+   }, [task, autoEditTags]);
 
-  const handleSave = async () => {
-     setIsSubmitting(true);
-     await onUpdate(task.id, { 
-       title: editedTitle.trim() || 'Sin Título', 
-       description: editedDesc,
-       // @ts-ignore
-       tag_ids: editedTagIds,
-       assigned_to: editedAssignedTo || null
-     });
-     setIsSubmitting(false);
-     setIsEditing(false);
-  }
+   const loadComments = async () => {
+      if (!task) return;
+      setIsLoadingComments(true);
+      const data = await fetchTaskComments(task.id);
+      setComments(data);
+      setIsLoadingComments(false);
+   }
 
-  const handleDelete = async () => {
-     if (window.confirm("¿Estás súper seguro de que quieres eliminar esta tarea permanentemente? (Esta acción no se puede deshacer)")) {
-        setIsSubmitting(true);
-        await onDelete(task.id);
-        setIsSubmitting(false);
-     }
-  }
+   if (!task) return null;
 
-  return (
+   const handleSave = async () => {
+      setIsSubmitting(true);
+      await onUpdate(task.id, { 
+        title: editedTitle.trim() || 'Sin Título', 
+        description: editedDesc,
+        // @ts-ignore
+        tag_ids: editedTagIds,
+        assigned_to: editedAssignedTo || null
+      });
+      setIsSubmitting(false);
+      setIsEditing(false);
+   }
+
+   const handleDelete = async () => {
+      if (window.confirm("¿Estás súper seguro de que quieres eliminar esta tarea permanentemente? (Esta acción no se puede deshacer)")) {
+         setIsSubmitting(true);
+         await onDelete(task.id);
+         setIsSubmitting(false);
+      }
+   }
+
+   const handleAddComment = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newComment.trim() || !task) return;
+
+      const comment = await createComment(
+         task.id, 
+         currentUserId, 
+         newComment, 
+         replyingTo?.id || null
+      );
+
+      if (comment) {
+         setNewComment('');
+         setReplyingTo(null);
+         loadComments(); // Recargar para ver el nuevo comentario/respuesta
+      }
+   }
+
+   const handleDeleteComment = async (id: string) => {
+      if (window.confirm("¿Eliminar comentario?")) {
+         const success = await deleteComment(id);
+         if (success) loadComments();
+      }
+   }
+
+   return (
     <>
       <div 
         className={`fixed inset-0 z-40 bg-background/50 backdrop-blur-sm transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
         onClick={onClose} 
       />
       
-      <div className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[450px] bg-surface-container-low border-l border-surface-container-high shadow-2xl transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+         
+         <div className={`w-full max-w-2xl max-h-[90vh] bg-surface-container-low rounded-3xl border border-surface-container-high shadow-[0_20px_60px_rgba(0,0,0,0.6)] transform transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] flex flex-col overflow-hidden ${isOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-10'}`}>
          
          {/* Botonera superior flotante */}
          <div className="absolute top-4 right-4 z-20 flex gap-2">
@@ -218,32 +264,32 @@ export function TaskDetailPanel({
                </div>
             )}
 
-             <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-2">
-                   <h3 className="text-xs uppercase font-bold text-on-surface-variant tracking-wider">Etiquetas / Categorías</h3>
-                   {!isEditing && canManage && (
-                      <button onClick={() => setIsEditing(true)} className="text-[10px] text-primary hover:underline font-bold uppercase tracking-wider">Gestionar</button>
-                   )}
-                </div>
-                
-                {isEditing ? (
-                   <TagSelector selectedTagIds={editedTagIds} onChange={setEditedTagIds} />
-                ) : (
-                   <div 
-                      onClick={() => canManage && setIsEditing(true)} 
-                      className={`flex flex-wrap gap-2 min-h-[40px] p-2 rounded-xl bg-surface-container-low border border-dashed border-outline-variant/30 transition-all items-center ${canManage ? 'hover:border-primary/50 cursor-pointer' : ''}`}
-                   >
-                      {task.tags && task.tags.length > 0 ? (
-                         task.tags.map(t => <TagBadge key={t.id} tag={t} />)
-                      ) : (
-                         <div className="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium px-2">
-                            {canManage && <Plus className="w-3 h-3 text-primary" />}
-                            <span>{canManage ? 'Añadir etiquetas o categorías...' : 'Sin etiquetas'}</span>
-                         </div>
-                      )}
-                   </div>
-                )}
-             </div>
+            <div className="flex flex-col gap-2">
+               <div className="flex items-center justify-between border-b border-outline-variant/10 pb-2">
+                  <h3 className="text-xs uppercase font-bold text-on-surface-variant tracking-wider">Etiquetas / Categorías</h3>
+                  {!isEditing && canManage && (
+                     <button onClick={() => setIsEditing(true)} className="text-[10px] text-primary hover:underline font-bold uppercase tracking-wider">Gestionar</button>
+                  )}
+               </div>
+               
+               {isEditing ? (
+                  <TagSelector selectedTagIds={editedTagIds} onChange={setEditedTagIds} teamId={teamId} />
+               ) : (
+                  <div 
+                     onClick={() => canManage && setIsEditing(true)} 
+                     className={`flex flex-wrap gap-2 min-h-[40px] p-2 rounded-xl bg-surface-container-low border border-dashed border-outline-variant/30 transition-all items-center ${canManage ? 'hover:border-primary/50 cursor-pointer' : ''}`}
+                  >
+                     {task.tags && task.tags.length > 0 ? (
+                        task.tags.map(t => <TagBadge key={t.id} tag={t} />)
+                     ) : (
+                        <div className="flex items-center gap-2 text-[10px] text-on-surface-variant/60 font-medium px-2">
+                           {canManage && <Plus className="w-3 h-3 text-primary" />}
+                           <span>{canManage ? 'Añadir etiquetas o categorías...' : 'Sin etiquetas'}</span>
+                        </div>
+                     )}
+                  </div>
+               )}
+            </div>
 
             <div className="flex flex-col gap-2 mt-1">
                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-2">
@@ -261,6 +307,90 @@ export function TaskDetailPanel({
                   </div>
                )}
             </div>
+
+            {/* SECCIÓN DE COMENTARIOS (HILOS) */}
+            <div className="flex flex-col gap-4 mt-4 border-t border-outline-variant/10 pt-6">
+               <div className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-primary" />
+                  <h3 className="text-sm uppercase font-bold text-on-surface tracking-wider">Actividad y Comentarios</h3>
+               </div>
+
+               {/* Lista de Comentarios */}
+               <div className="flex flex-col gap-6">
+                  {isLoadingComments ? (
+                     <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                     </div>
+                  ) : comments.length > 0 ? (
+                     comments.map(comment => (
+                        <div key={comment.id} className="flex flex-col gap-3">
+                           {/* Comentario Principal */}
+                           <CommentItem 
+                              comment={comment} 
+                              onReply={() => setReplyingTo(comment)}
+                              onDelete={() => handleDeleteComment(comment.id)}
+                              currentUserId={currentUserId}
+                           />
+                           
+                           {/* Respuestas (Anidadas) */}
+                           {comment.replies && comment.replies.length > 0 && (
+                              <div className="ml-10 flex flex-col gap-4 border-l-2 border-outline-variant/10 pl-4">
+                                 {comment.replies.map(reply => (
+                                    <CommentItem 
+                                       key={reply.id} 
+                                       comment={reply}
+                                       onDelete={() => handleDeleteComment(reply.id)}
+                                       currentUserId={currentUserId}
+                                       isReply
+                                    />
+                                 ))}
+                              </div>
+                           )}
+                        </div>
+                     ))
+                  ) : (
+                     <p className="text-xs text-on-surface-variant/50 italic py-4">No hay comentarios aún. ¡Sé el primero en decir algo!</p>
+                  )}
+               </div>
+
+               {/* Input de Nuevo Comentario */}
+               <form onSubmit={handleAddComment} className="flex flex-col gap-3 bg-surface-container p-4 rounded-2xl border border-outline-variant/20 mt-2">
+                  {replyingTo && (
+                     <div className="flex items-center justify-between bg-primary/10 px-3 py-1.5 rounded-lg border border-primary/20">
+                        <p className="text-[10px] text-primary font-bold uppercase flex items-center gap-2">
+                           <Reply className="w-3 h-3" /> Respondiendo a {replyingTo.profile?.full_name || replyingTo.profile?.email}
+                        </p>
+                        <button type="button" onClick={() => setReplyingTo(null)} className="text-[10px] text-on-surface-variant hover:text-error transition-colors">✕ Cancelar</button>
+                     </div>
+                  )}
+                  <div className="flex gap-3">
+                     <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-outline-variant/20">
+                        <img 
+                           src={teamMembers.find(m => m.user_id === currentUserId)?.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUserId}`} 
+                           alt="Tú" 
+                           className="w-full h-full object-cover" 
+                        />
+                     </div>
+                     <textarea 
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Escribe un comentario..."
+                        rows={2}
+                        className="flex-1 bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none resize-none"
+                     />
+                  </div>
+                  <div className="flex justify-end pt-2 border-t border-outline-variant/10">
+                     <button 
+                        type="submit" 
+                        disabled={!newComment.trim()}
+                        className="px-4 py-2 bg-primary text-black font-bold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-2 hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50"
+                     >
+                        <Send className="w-3 h-3" />
+                        Publicar
+                     </button>
+                  </div>
+               </form>
+            </div>
          </div>
 
          {/* Fixed Footer for Save Action */}
@@ -276,7 +406,62 @@ export function TaskDetailPanel({
                </button>
             </div>
          )}
+         </div>
       </div>
     </>
-  )
+   )
+}
+
+function CommentItem({ 
+   comment, 
+   onReply, 
+   onDelete, 
+   currentUserId, 
+   isReply = false 
+}: { 
+   comment: TaskComment, 
+   onReply?: () => void, 
+   onDelete: () => void, 
+   currentUserId: string,
+   isReply?: boolean
+}) {
+   const isAuthor = comment.user_id === currentUserId;
+
+   return (
+      <div className="flex gap-3 group/comment">
+         <div className={`w-8 h-8 rounded-full overflow-hidden shrink-0 border border-outline-variant/20 ${isReply ? 'scale-90' : ''}`}>
+            <img 
+               src={comment.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.user_id}`} 
+               alt="Avatar" 
+               className="w-full h-full object-cover" 
+            />
+         </div>
+         <div className="flex-1 flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+               <span className="text-[11px] font-bold text-on-surface">
+                  {comment.profile?.full_name || comment.profile?.email}
+               </span>
+               <span className="text-[9px] text-on-surface-variant/60 font-medium flex items-center gap-1">
+                  <Calendar className="w-2.5 h-2.5" />
+                  {new Date(comment.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+               </span>
+            </div>
+            <div className="bg-surface-container-high px-4 py-2.5 rounded-2xl rounded-tl-none border border-outline-variant/10">
+               <p className="text-sm text-on-surface/90 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+            </div>
+            <div className="flex items-center gap-4 mt-0.5 ml-1">
+               {!isReply && onReply && (
+                  <button onClick={onReply} className="text-[9px] font-black uppercase tracking-tighter text-primary hover:underline flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity">
+                     <Reply className="w-3 h-3" /> Responder
+                  </button>
+               )}
+               {isAuthor && (
+                  <button onClick={onDelete} className="text-[9px] font-black uppercase tracking-tighter text-on-surface-variant hover:text-error flex items-center gap-1 opacity-0 group-hover/comment:opacity-40 hover:!opacity-100 transition-opacity">
+                     <Trash2 className="w-3 h-3" /> Eliminar
+                  </button>
+               )}
+            </div>
+         </div>
+      </div>
+   )
 }

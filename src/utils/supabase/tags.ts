@@ -3,15 +3,23 @@ import { Tag } from '@/types';
 
 const supabase = createClient();
 
-export async function fetchUserTags(): Promise<Tag[]> {
+export async function fetchUserTags(teamId?: string): Promise<Tag[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('tags')
     .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: true });
+    .eq('user_id', user.id);
+
+  if (teamId) {
+    query = query.eq('team_id', teamId);
+  } else {
+    // If no teamId, fetch tags where team_id is null (global)
+    query = query.is('team_id', null);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: true });
 
   if (error) {
     console.error('Error fetching tags:', error);
@@ -21,14 +29,14 @@ export async function fetchUserTags(): Promise<Tag[]> {
   return data || [];
 }
 
-export async function createTag(name: string, color: string = '#3b82f6', parentId: string | null = null): Promise<Tag | null> {
+export async function createTag(name: string, color: string = '#3b82f6', parentId: string | null = null, teamId: string | null = null): Promise<Tag | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
   const { data, error } = await supabase
     .from('tags')
     .insert([
-      { name, color, parent_id: parentId, user_id: user.id }
+      { name, color, parent_id: parentId, user_id: user.id, team_id: teamId }
     ])
     .select()
     .single();

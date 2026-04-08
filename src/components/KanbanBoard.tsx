@@ -120,12 +120,22 @@ function TaskCardRenderer({ task, globalAvatar, isDragging, onClick, onDelete, o
                </button>
             </div>
            <div className="flex items-center justify-between">
-             {task.due_date && (
-               <span className={`text-[10px] font-semibold flex items-center gap-1.5 shrink-0 ${isOverdue ? 'text-error' : 'text-on-surface-variant'}`}>
-                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                 {new Date(task.due_date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' })}
-               </span>
-             )}
+             <div className="flex items-center gap-3">
+               {task.due_date && (
+                 <span className={`text-[10px] font-semibold flex items-center gap-1.5 shrink-0 ${isOverdue ? 'text-error' : 'text-on-surface-variant'}`}>
+                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   {new Date(task.due_date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' })}
+                 </span>
+               )}
+               
+               {/* Activity Indicator (Comments) */}
+               {((task as any).task_comments?.[0]?.count > 0 || task.comment_count! > 0) && (
+                 <div className="flex items-center gap-1 text-on-surface-variant/60" title={`${(task as any).task_comments?.[0]?.count || task.comment_count} comentarios`}>
+                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                   <span className="text-[10px] font-bold">{(task as any).task_comments?.[0]?.count || task.comment_count}</span>
+                 </div>
+               )}
+             </div>
              <div title={task.assignee?.full_name || 'Unassigned'} className="w-5 h-5 shrink-0 rounded-full bg-secondary-container bg-cover bg-center ring-1 ring-background ml-auto overflow-hidden">
                <img src={task.assignee?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${task.assigned_to || task.user_id}`} alt="Assignee" className="w-full h-full object-cover" />
              </div>
@@ -207,9 +217,6 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
          const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
          if (prof) setSessionProfile(prof);
          
-         const tags = await fetchUserTags();
-         setAllTags(tags);
-
          const userTeams = await fetchUserTeams();
          setTeams(userTeams);
          if (userTeams.length > 0) {
@@ -223,6 +230,9 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
     if (selectedTeamId) {
        fetchTeamMembers(selectedTeamId).then(setTeamMembers);
        refreshTasksWithTags();
+       // Fetch tags scoped to team and clear filters
+       fetchUserTags(selectedTeamId).then(setAllTags);
+       setFilterTagIds([]);
     }
   }, [selectedTeamId]);
 
@@ -231,7 +241,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
 
     const { data: tasksWithTags, error } = await supabase
       .from('tasks')
-      .select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*)')
+      .select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*), task_comments(count)')
       .eq('team_id', selectedTeamId);
     
     if (!error && tasksWithTags) {
@@ -246,9 +256,24 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
 
   const handleUpdateProfile = async (changes: Partial<Profile>) => {
     if (!sessionProfile) return;
-    const { error } = await supabase.from('profiles').update(changes).eq('id', sessionProfile.id);
-    if (!error) {
-       setSessionProfile({ ...sessionProfile, ...changes });
+    const { data: updatedProfile, error } = await supabase
+      .from('profiles')
+      .update(changes)
+      .eq('id', sessionProfile.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating profile:", error);
+      throw error;
+    }
+    if (updatedProfile) {
+      setSessionProfile(updatedProfile);
+    }
+    // Refresh tasks and team members to show the new name everywhere
+    refreshTasksWithTags();
+    if (selectedTeamId) {
+      fetchTeamMembers(selectedTeamId).then(setTeamMembers);
     }
   };
 
@@ -291,7 +316,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
          team_id: selectedTeamId,
          assigned_to: data.assigned_to || null
       }
-    ]).select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*)').single();
+    ]).select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*), task_comments(count)').single();
     
     if (newTask) {
       if (data.tag_ids && data.tag_ids.length > 0) {
@@ -750,6 +775,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
         onClose={() => setIsModalOpen(false)} 
         onSubmit={handleNewTask} 
         teamMembers={teamMembers}
+        teamId={selectedTeamId}
       />
       
       {isTagManagerOpen && (
@@ -758,11 +784,15 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
             <div className="relative w-full max-w-md bg-surface-container rounded-2xl border border-outline-variant/30 shadow-2xl">
               <div className="p-4 border-b border-outline-variant/10 flex items-center justify-between"><h2 className="text-lg font-bold text-on-surface">Categorías</h2><button onClick={() => setIsTagManagerOpen(false)}><X className="w-5 h-5" /></button></div>
               <div className="p-6">
-                 <TagSelector selectedTagIds={[]} onChange={async () => {
-                    const tags = await fetchUserTags();
-                    setAllTags(tags);
-                    refreshTasksWithTags();
-                 }} />
+                 <TagSelector 
+                   selectedTagIds={[]} 
+                   teamId={selectedTeamId}
+                   onChange={async () => {
+                     const tags = await fetchUserTags(selectedTeamId || undefined);
+                     setAllTags(tags);
+                     refreshTasksWithTags();
+                   }} 
+                 />
               </div>
               <div className="p-4 flex justify-end"><button onClick={() => setIsTagManagerOpen(false)} className="px-6 py-2 bg-primary text-black font-bold uppercase text-[10px] rounded-lg">Listo</button></div>
             </div>
@@ -781,6 +811,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
         teamMembers={teamMembers}
         currentUserRole={currentUserRole}
         currentUserId={currentUserId}
+        teamId={selectedTeamId}
       />
 
       <CreateTeamModal 

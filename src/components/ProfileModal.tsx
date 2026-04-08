@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Profile } from '@/types'
 import { LogOut, Image as ImageIcon, Upload, X, Check } from 'lucide-react'
@@ -20,10 +20,17 @@ export function ProfileModal({
 }) {
   const [activeTab, setActiveTab] = useState<'url' | 'upload'>('url');
   const [avatarUrlInput, setAvatarUrlInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const supabase = createClient();
+
+  useEffect(() => {
+    if (profile) {
+      setNameInput(profile.full_name || '');
+    }
+  }, [profile, isOpen]);
 
   if (!isOpen || !profile) return null;
 
@@ -54,15 +61,24 @@ export function ProfileModal({
            newUrl = publicUrl;
        }
 
-       if (newUrl !== profile.avatar_url && newUrl) {
-           await onUpdateProfile({ avatar_url: newUrl });
-           alert("¡Foto de Perfil actualizada exitosamente!");
-           setAvatarUrlInput('');
-           setSelectedFile(null);
-       }
+        const nameTrimmed = nameInput.trim();
+        const nameChanged = nameTrimmed !== (profile.full_name || '').trim();
+        const avatarChanged = newUrl !== profile.avatar_url && newUrl;
+
+        if (nameChanged || avatarChanged) {
+            const changes: Partial<Profile> = {};
+            if (nameChanged) changes.full_name = nameTrimmed;
+            if (avatarChanged) changes.avatar_url = newUrl as string;
+
+            await onUpdateProfile(changes);
+            alert("¡Perfil actualizado!");
+            setAvatarUrlInput('');
+            setSelectedFile(null);
+            onClose(); // Auto-close on success for better UX
+        }
     } catch(err: any) {
-       console.error(err);
-       alert("Error salvando tu avatar. Verifica tamaño o conexión.");
+        console.error(err);
+        alert("Error al actualizar el perfil. Inténtalo de nuevo.");
     }
     
     setIsSubmitting(false);
@@ -79,15 +95,21 @@ export function ProfileModal({
          </button>
 
          {/* Información Central del Perfil */}
-         <div className="flex flex-col items-center gap-4 mt-2 mb-6">
-            <div className="w-24 h-24 rounded-full border-4 border-surface-container shadow-[0_0_20px_rgba(151,169,255,0.15)] overflow-hidden bg-surface-container-high relative group">
-               <img src={currentAvatar} alt="Current Avatar" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-            </div>
-            <div className="text-center">
-               <h2 className="text-xl font-black tracking-tight text-on-surface">{profile.full_name || 'Agente Usuario'}</h2>
-               <p className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant mt-1">{profile.email}</p>
-            </div>
-         </div>
+          <div className="flex flex-col items-center gap-4 mt-2 mb-6 w-full">
+             <div className="w-24 h-24 rounded-full border-4 border-surface-container shadow-[0_0_20px_rgba(151,169,255,0.15)] overflow-hidden bg-surface-container-high relative group">
+                <img src={currentAvatar} alt="Current Avatar" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+             </div>
+             <div className="text-center w-full px-4">
+                <input 
+                   type="text" 
+                   value={nameInput}
+                   onChange={e => setNameInput(e.target.value)}
+                   placeholder="Tu nombre completo"
+                   className="w-full bg-transparent border-b border-outline-variant/30 text-center text-xl font-black tracking-tight text-on-surface focus:outline-none focus:border-primary transition-all py-1 placeholder:text-on-surface-variant/30"
+                />
+                <p className="text-xs font-semibold uppercase tracking-widest text-on-surface-variant mt-2">{profile.email}</p>
+             </div>
+          </div>
 
          {/* Controles de Actualización de Avatar */}
          <div className="border-t border-outline-variant/10 pt-6">
@@ -129,10 +151,10 @@ export function ProfileModal({
 
             <button 
                onClick={handleSubmitAvatar}
-               disabled={isSubmitting || (activeTab === 'url' ? !avatarUrlInput.trim() : !selectedFile)}
+               disabled={isSubmitting || (nameInput.trim() === (profile.full_name || '').trim() && (activeTab === 'url' ? !avatarUrlInput.trim() : !selectedFile))}
                className="w-full mt-4 flex items-center justify-center gap-2 py-3 bg-gradient-to-br from-primary to-primary-dim text-black font-extrabold text-[11px] tracking-widest rounded-xl uppercase shadow-[0_4px_14px_rgba(151,169,255,0.2)] hover:shadow-[0_6px_20px_rgba(151,169,255,0.3)] disabled:opacity-50 disabled:grayscale transition-all"
             >
-               {isSubmitting ? 'Cambiando Identidad...' : <><Check className="w-4 h-4" /> Aplicar Avatar</>}
+               {isSubmitting ? 'Actualizando Perfil...' : <><Check className="w-4 h-4" /> Aplicar Cambios</>}
             </button>
          </div>
 

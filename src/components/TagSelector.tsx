@@ -7,6 +7,7 @@ import { Plus, Check, ChevronDown, ChevronRight, X, PaintBucket, Tag as TagIcon 
 interface TagSelectorProps {
   selectedTagIds: string[];
   onChange: (tagIds: string[]) => void;
+  teamId?: string | null;
 }
 
 const PRESET_COLORS = [
@@ -14,7 +15,7 @@ const PRESET_COLORS = [
   '#ec4899', '#06b6d4', '#64748b', '#22c55e', '#a855f7'
 ];
 
-export function TagSelector({ selectedTagIds, onChange }: TagSelectorProps) {
+export function TagSelector({ selectedTagIds, onChange, teamId }: TagSelectorProps) {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -25,10 +26,10 @@ export function TagSelector({ selectedTagIds, onChange }: TagSelectorProps) {
 
   useEffect(() => {
     loadTags();
-  }, []);
+  }, [teamId]); // Re-load when team changes
 
   const loadTags = async () => {
-    const tags = await fetchUserTags();
+    const tags = await fetchUserTags(teamId || undefined);
     setAllTags(tags);
   };
 
@@ -50,7 +51,7 @@ export function TagSelector({ selectedTagIds, onChange }: TagSelectorProps) {
 
   const handleCreateTag = async () => {
     if (!newTagName.trim()) return;
-    const tag = await createTag(newTagName.trim(), newTagColor, newTagParentId);
+    const tag = await createTag(newTagName.trim(), newTagColor, newTagParentId, teamId || null);
     if (tag) {
       setAllTags(prev => [...prev, tag]);
       onChange([...selectedTagIds, tag.id]);
