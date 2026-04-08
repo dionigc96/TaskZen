@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Task, TaskStatus, Profile, Tag, Team, TeamMember } from '@/types';
-import { Trash, Search, Plus, Tag as TagIcon, LayoutGrid, X, Users, Calendar, Settings, ChevronDown } from 'lucide-react';
+import { Trash, Search, Plus, Tag as TagIcon, LayoutGrid, X, Users, Calendar, Settings, ChevronDown, Paperclip } from 'lucide-react';
 import { TagBadge } from './TagBadge';
 import { TagSelector } from './TagSelector';
 import { fetchUserTags, assignTagsToTask } from '@/utils/supabase/tags';
@@ -135,6 +135,14 @@ function TaskCardRenderer({ task, globalAvatar, isDragging, onClick, onDelete, o
                    <span className="text-[10px] font-bold">{(task as any).task_comments?.[0]?.count || task.comment_count}</span>
                  </div>
                )}
+               
+               {/* Attachment Indicator */}
+               {((task as any).attachments?.[0]?.count > 0) && (
+                 <div className="flex items-center gap-1 text-on-surface-variant/60" title={`${(task as any).attachments?.[0]?.count} archivos adjuntos`}>
+                   <Paperclip className="w-3 h-3" strokeWidth={2.5} />
+                   <span className="text-[10px] font-bold">{(task as any).attachments?.[0]?.count}</span>
+                 </div>
+               )}
              </div>
              <div title={task.assignee?.full_name || 'Unassigned'} className="w-5 h-5 shrink-0 rounded-full bg-secondary-container bg-cover bg-center ring-1 ring-background ml-auto overflow-hidden">
                <img src={task.assignee?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${task.assigned_to || task.user_id}`} alt="Assignee" className="w-full h-full object-cover" />
@@ -241,7 +249,7 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
 
     const { data: tasksWithTags, error } = await supabase
       .from('tasks')
-      .select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*), task_comments(count)')
+      .select('*, tags(*), assignee:profiles!tasks_assigned_to_fkey(*), task_comments(count), attachments(count)')
       .eq('team_id', selectedTeamId);
     
     if (!error && tasksWithTags) {
@@ -807,7 +815,8 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
         autoEditTags={isOpeningWithTagsFocused} 
         onClose={() => { setSelectedTask(null); setIsOpeningWithTagsFocused(false); }} 
         onUpdate={handleUpdateTask} 
-        onDelete={handleDeleteTask} 
+        onDelete={handleDeleteTask}
+        onRefresh={refreshTasksWithTags}
         teamMembers={teamMembers}
         currentUserRole={currentUserRole}
         currentUserId={currentUserId}

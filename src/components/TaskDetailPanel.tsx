@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react'
 import { Task, Tag, TeamMember, TeamRole, TaskComment } from '@/types'
 import { TagSelector } from './TagSelector'
 import { TagBadge } from './TagBadge'
-import { Plus, User, ShieldAlert, MessageSquare, Send, Reply, Trash2, Calendar } from 'lucide-react'
+import { Plus, User, ShieldAlert, MessageSquare, Send, Reply, Trash2, Calendar, Paperclip, FileText, X, Download, AlertCircle, Check, Loader2 } from 'lucide-react'
 import { fetchTaskComments, createComment, deleteComment } from '@/utils/supabase/comments'
+import { uploadAttachment, getAttachmentsByTask, getAttachmentsByComment, deleteAttachment, getDownloadUrl } from '@/utils/supabase/attachments'
+import { Attachment } from '@/types'
 
 export function TaskDetailPanel({ 
    isOpen, 
@@ -14,6 +16,7 @@ export function TaskDetailPanel({
    onClose, 
    onUpdate, 
    onDelete,
+   onRefresh,
    teamMembers = [],
    currentUserRole = 'member',
    currentUserId = '',
@@ -25,6 +28,7 @@ export function TaskDetailPanel({
    onClose: () => void, 
    onUpdate: (id: string, partial: Partial<Task>) => Promise<void>, 
    onDelete: (id: string) => Promise<void>,
+   onRefresh?: () => void,
    teamMembers?: TeamMember[],
    currentUserRole?: TeamRole,
    currentUserId?: string,
@@ -42,6 +46,11 @@ export function TaskDetailPanel({
    const [newComment, setNewComment] = useState('');
    const [replyingTo, setReplyingTo] = useState<TaskComment | null>(null);
    const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+   // Estados para adjuntos
+   const [taskAttachments, setTaskAttachments] = useState<Attachment[]>([]);
+   const [isUploading, setIsUploading] = useState(false);
+   const [commentFile, setCommentFile] = useState<File | null>(null);
 
    // RBAC: Roles higher than member OR creator can edit/delete
    const canManage = currentUserRole === 'admin' || currentUserRole === 'product_owner' || task?.user_id === currentUserId;
@@ -61,6 +70,7 @@ export function TaskDetailPanel({
          }
 
          loadComments();
+         loadAttachments();
       }
    }, [task, autoEditTags]);
 
@@ -70,6 +80,52 @@ export function TaskDetailPanel({
       const data = await fetchTaskComments(task.id);
       setComments(data);
       setIsLoadingComments(false);
+   }
+
+   const loadAttachments = async () => {
+     if (!task) return;
+     const data = await getAttachmentsByTask(task.id);
+     setTaskAttachments(data);
+   }
+
+   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+     const file = e.target.files?.[0];
+     if (!file || !task) return;
+
+     setIsUploading(true);
+     try {
+       await uploadAttachment(file, task.id);
+       loadAttachments();
+       onRefresh?.();
+     } catch (err: any) {
+       alert(err.message || 'Error al subir el archivo');
+     } finally {
+       setIsUploading(false);
+       if (e.target) e.target.value = '';
+     }
+   }
+
+   const handleDeleteAttachment = async (att: Attachment) => {
+     if (window.confirm('¿Eliminar este archivo permanentemente?')) {
+       await deleteAttachment(att);
+       loadAttachments();
+       loadComments(); // Refresh comments in case it was a comment attachment
+       onRefresh?.();
+     }
+   }
+
+   const handleDownload = async (path: string, fileName: string) => {
+     try {
+       const url = await getDownloadUrl(path);
+       const link = document.createElement('a');
+       link.href = url;
+       link.download = fileName;
+       document.body.appendChild(link);
+       link.click();
+       document.body.removeChild(link);
+     } catch (err) {
+       alert('Error al obtener el enlace de descarga');
+     }
    }
 
    if (!task) return null;
@@ -97,8 +153,9 @@ export function TaskDetailPanel({
 
    const handleAddComment = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newComment.trim() || !task) return;
+      if (!newComment.trim() && !commentFile) return;
 
+      setIsSubmitting(true);
       const comment = await createComment(
          task.id, 
          currentUserId, 
@@ -106,17 +163,31 @@ export function TaskDetailPanel({
          replyingTo?.id || null
       );
 
+      if (comment && commentFile) {
+         try {
+           await uploadAttachment(commentFile, undefined, comment.id);
+         } catch (err: any) {
+           alert(err.message || 'Error al subir el archivo del comentario');
+         }
+      }
+
       if (comment) {
          setNewComment('');
+         setCommentFile(null);
          setReplyingTo(null);
-         loadComments(); // Recargar para ver el nuevo comentario/respuesta
+         loadComments(); // Refresh to see the new comment with its attachment
+         onRefresh?.();
       }
+      setIsSubmitting(false);
    }
 
    const handleDeleteComment = async (id: string) => {
       if (window.confirm("¿Eliminar comentario?")) {
          const success = await deleteComment(id);
-         if (success) loadComments();
+         if (success) {
+            loadComments();
+            onRefresh?.();
+         }
       }
    }
 
@@ -132,14 +203,24 @@ export function TaskDetailPanel({
          <div className={`w-full max-w-2xl max-h-[90vh] bg-surface-container-low rounded-3xl border border-surface-container-high shadow-[0_20px_60px_rgba(0,0,0,0.6)] transform transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] flex flex-col overflow-hidden ${isOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-10'}`}>
          
          {/* Botonera superior flotante */}
-         <div className="absolute top-4 right-4 z-20 flex gap-2">
+         <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            {isEditing && (
+              <button 
+                onClick={handleSave} 
+                disabled={isSubmitting} 
+                className="px-4 h-8 rounded-full bg-primary text-black flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 text-[10px] font-bold uppercase tracking-wider animate-in fade-in zoom-in duration-300"
+              >
+                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Check className="w-4 h-4" />}
+                <span className="hidden sm:inline">Guardar Cambios</span>
+              </button>
+            )}
             {canManage && (
               <button onClick={handleDelete} title="Eliminar Tarea" className="w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center hover:bg-error hover:text-white transition-colors shadow-sm">
-                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                 <Trash2 className="w-4 h-4" />
               </button>
             )}
             <button onClick={onClose} className="w-8 h-8 rounded-full bg-background/50 backdrop-blur-md text-on-surface-variant flex items-center justify-center border border-outline-variant/20 hover:text-on-surface hover:bg-surface-container-highest transition-colors shadow-sm">
-               ✕
+               <X className="w-4 h-4" />
             </button>
          </div>
 
@@ -308,6 +389,50 @@ export function TaskDetailPanel({
                )}
             </div>
 
+            {/* SECCIÓN DE ADJUNTOS (TASK) */}
+            <div className="flex flex-col gap-2">
+               <div className="flex items-center justify-between border-b border-outline-variant/10 pb-2">
+                  <h3 className="text-xs uppercase font-bold text-on-surface-variant tracking-wider">Archivos Adjuntos</h3>
+                  <label className={`text-[10px] text-primary hover:underline font-bold uppercase tracking-wider cursor-pointer ${isUploading ? 'opacity-50' : ''}`}>
+                    <input type="file" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                    {isUploading ? 'Subiendo...' : 'Añadir Archivo'}
+                  </label>
+               </div>
+               
+               {taskAttachments.length > 0 ? (
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                   {taskAttachments.map(att => (
+                     <div key={att.id} className="group/att flex items-center justify-between bg-surface-container p-2 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all">
+                       <div className="flex items-center gap-2 overflow-hidden">
+                         <div className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant shrink-0">
+                           <FileText className="w-4 h-4" />
+                         </div>
+                         <div className="overflow-hidden">
+                           <p className="text-[11px] font-bold text-on-surface truncate pr-2" title={att.file_name}>{att.file_name}</p>
+                           <p className="text-[9px] text-on-surface-variant/60">{(att.size / 1024 / 1024).toFixed(2)} MB</p>
+                         </div>
+                       </div>
+                       <div className="flex items-center gap-1 opacity-0 group-hover/att:opacity-100 transition-opacity">
+                         <button onClick={() => handleDownload(att.file_path, att.file_name)} className="p-1.5 hover:bg-surface-container-highest rounded-lg text-primary transition-colors">
+                           <Download className="w-3.5 h-3.5" />
+                         </button>
+                         {canManage && (
+                           <button onClick={() => handleDeleteAttachment(att)} className="p-1.5 hover:bg-error/10 rounded-lg text-error/60 hover:text-error transition-colors">
+                             <Trash2 className="w-3.5 h-3.5" />
+                           </button>
+                         )}
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               ) : (
+                 <div className="flex flex-col items-center justify-center py-6 border-2 border-dashed border-outline-variant/20 rounded-2xl bg-surface-container-lowest/30">
+                   <Paperclip className="w-6 h-6 text-on-surface-variant/20 mb-2" />
+                   <p className="text-[10px] text-on-surface-variant/50 font-medium">No hay archivos en esta tarea</p>
+                 </div>
+               )}
+            </div>
+
             {/* SECCIÓN DE COMENTARIOS (HILOS) */}
             <div className="flex flex-col gap-4 mt-4 border-t border-outline-variant/10 pt-6">
                <div className="flex items-center gap-2">
@@ -330,6 +455,8 @@ export function TaskDetailPanel({
                               onReply={() => setReplyingTo(comment)}
                               onDelete={() => handleDeleteComment(comment.id)}
                               currentUserId={currentUserId}
+                              canManage={canManage}
+                              onDeleteAttachment={handleDeleteAttachment}
                            />
                            
                            {/* Respuestas (Anidadas) */}
@@ -341,6 +468,8 @@ export function TaskDetailPanel({
                                        comment={reply}
                                        onDelete={() => handleDeleteComment(reply.id)}
                                        currentUserId={currentUserId}
+                                       canManage={canManage}
+                                       onDeleteAttachment={handleDeleteAttachment}
                                        isReply
                                     />
                                  ))}
@@ -379,14 +508,44 @@ export function TaskDetailPanel({
                         className="flex-1 bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none resize-none"
                      />
                   </div>
-                  <div className="flex justify-end pt-2 border-t border-outline-variant/10">
+
+                  {/* Adjunto en Comentario */}
+                  {commentFile && (
+                    <div className="ml-11 flex items-center justify-between bg-surface-container-highest/50 p-2 rounded-xl border border-outline-variant/20 animate-in fade-in slide-in-from-left-2 mb-2">
+                       <div className="flex items-center gap-2">
+                         <FileText className="w-4 h-4 text-primary" />
+                         <p className="text-[11px] font-bold text-on-surface truncate max-w-[200px]">{commentFile.name}</p>
+                       </div>
+                       <button type="button" onClick={() => setCommentFile(null)} className="p-1 hover:bg-error/10 text-error rounded-full transition-colors">
+                         <X className="w-3.5 h-3.5" />
+                       </button>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-outline-variant/10">
+                     <div className="flex items-center gap-1">
+                        <label className="p-2 hover:bg-surface-container-highest rounded-xl text-on-surface-variant hover:text-primary transition-colors cursor-pointer" title="Adjuntar archivo (máx 5MB)">
+                          <input type="file" className="hidden" onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 5 * 1024 * 1024) {
+                                alert('El archivo supera los 5MB');
+                                if (e.target) e.target.value = '';
+                                return;
+                              }
+                              setCommentFile(file);
+                            }
+                          }} />
+                          <Paperclip className="w-4 h-4" />
+                        </label>
+                     </div>
                      <button 
                         type="submit" 
-                        disabled={!newComment.trim()}
+                        disabled={isSubmitting || (!newComment.trim() && !commentFile)}
                         className="px-4 py-2 bg-primary text-black font-bold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-2 hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50"
                      >
                         <Send className="w-3 h-3" />
-                        Publicar
+                        {isSubmitting ? 'Enviando...' : 'Publicar'}
                      </button>
                   </div>
                </form>
@@ -417,13 +576,17 @@ function CommentItem({
    onReply, 
    onDelete, 
    currentUserId, 
-   isReply = false 
+   isReply = false,
+   canManage = false,
+   onDeleteAttachment
 }: { 
    comment: TaskComment, 
    onReply?: () => void, 
    onDelete: () => void, 
    currentUserId: string,
-   isReply?: boolean
+   isReply?: boolean,
+   canManage?: boolean,
+   onDeleteAttachment?: (att: Attachment) => void
 }) {
    const isAuthor = comment.user_id === currentUserId;
 
@@ -448,6 +611,26 @@ function CommentItem({
             </div>
             <div className="bg-surface-container-high px-4 py-2.5 rounded-2xl rounded-tl-none border border-outline-variant/10">
                <p className="text-sm text-on-surface/90 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+               
+               {/* Adjuntos del comentario */}
+               {comment.attachments && comment.attachments.length > 0 && (
+                 <div className="mt-3 flex flex-wrap gap-2">
+                   {comment.attachments.map(att => (
+                     <div key={att.id} className="group/att flex items-center gap-2 bg-surface-container p-1.5 pr-2 rounded-xl border border-outline-variant/20 hover:border-primary/30 transition-all">
+                       <FileText className="w-3.5 h-3.5 text-on-surface-variant" />
+                       <span className="text-[10px] font-medium text-on-surface truncate max-w-[120px]" title={att.file_name}>{att.file_name}</span>
+                       <div className="flex items-center gap-1 ml-1">
+                         {/* Button for download (logic moved to parent or helper) */}
+                         {(isAuthor || canManage) && (
+                           <button onClick={() => onDeleteAttachment?.(att)} className="p-1 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors">
+                             <Trash2 className="w-3 h-3" />
+                           </button>
+                         )}
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
             </div>
             <div className="flex items-center gap-4 mt-0.5 ml-1">
                {!isReply && onReply && (
