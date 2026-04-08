@@ -9,8 +9,8 @@ export default function LandingPage() {
       <header className="fixed top-0 w-full z-50 border-b border-surface-container-high/50 bg-background/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-dim flex items-center justify-center shadow-lg shadow-primary/20">
-               <span className="text-black font-extrabold text-lg flex items-center justify-center h-full pt-0.5">T</span>
+             <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shadow-primary/10 flex items-center justify-center bg-white p-1">
+               <img src="/logo.png" alt="TaskZen Logo" className="w-full h-full object-contain" />
              </div>
              <span className="text-xl font-black tracking-tight text-on-surface">TaskZen</span>
           </div>
@@ -74,7 +74,7 @@ export default function LandingPage() {
                    <h2 className="font-semibold text-on-surface uppercase tracking-wider text-[10px]">Backlog</h2>
                  </div>
                  <div className="bg-surface-container rounded-lg p-3 border border-outline-variant/10 shadow-sm">
-                    <p className="text-sm font-semibold text-on-surface">Diseñar Logo de TaskZen</p>
+                    <p className="text-sm font-semibold text-on-surface">Logo de TaskZen Completado</p>
                     <p className="text-xs text-on-surface-variant mt-2">&quot;Que transmita paz y fluidez.&quot;</p>
                  </div>
                  <div className="bg-surface-container rounded-lg p-3 border border-outline-variant/10 shadow-sm border-l-2 border-l-error">

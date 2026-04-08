@@ -405,8 +405,8 @@ export function KanbanBoard({ initialTasks }: { initialTasks: Task[] }) {
         {/* Top Row: Logo & Search (Mobile) / Logo (Desktop) */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-dim flex items-center justify-center shadow-lg shadow-primary/20">
-              <span className="text-black font-extrabold text-lg flex items-center justify-center h-full pt-0.5">T</span>
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-primary/10 flex items-center justify-center bg-white p-1">
+              <img src="/logo.png" alt="TaskZen Logo" className="w-full h-full object-contain hover:scale-110 transition-transform duration-300" />
             </div>
             <div className="flex flex-col">
               <h1 className="text-xl font-black tracking-tight text-on-surface">TaskZen</h1>

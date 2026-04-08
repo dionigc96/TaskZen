@@ -9,12 +9,10 @@ export function LoginForm() {
   return (
     <div className="w-full max-w-sm p-8 bg-surface-container-low rounded-2xl border border-surface-container-high text-center shadow-[0_20px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
       
-      {/* Candado / Logo de Seguridad */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-secondary mx-auto mb-6 shadow-[0_0_30px_rgba(151,169,255,0.3)] flex items-center justify-center relative overflow-hidden">
-          <div className="absolute inset-0 bg-white/10 blur-xl rounded-full translate-y-4" />
-          <svg className="w-8 h-8 text-black relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
+      {/* Brand Logo */}
+      <div className="w-20 h-20 rounded-3xl bg-white mx-auto mb-8 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center relative overflow-hidden p-2 group transition-all duration-500 hover:scale-105">
+          <img src="/logo.png" alt="TaskZen Logo" className="w-full h-full object-contain relative z-10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
       
       <h1 className="text-2xl font-bold mb-2 text-on-surface tracking-tight">
